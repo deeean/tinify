@@ -6,10 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-cors = "0.6.4"
+actix-multipart = "0.5.0"
+actix-web = "4.3.0"
+env_logger = "0.10.0"
 exoquant = "0.2.0"
+futures-util = "0.3.26"
 image = "0.24.5"
 imghdr = "0.7.0"
 lodepng = "3.7.2"
 mime = "0.3.16"
 mozjpeg = "0.9.4"
-rayon = "1.6.1"
