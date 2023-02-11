@@ -5,7 +5,6 @@ use lodepng::RGBA;
 
 #[derive(Debug)]
 pub enum Error {
-    IoError(std::io::Error),
     QualityOutOfRange,
     UnexpectedImageType,
     UnsupportedImageType(Type),
@@ -14,17 +13,12 @@ pub enum Error {
     MozjpegError,
 }
 
-pub fn tinify<P>(path: P, quality: i32) -> Result<Vec<u8>, Error> where P: AsRef<std::path::Path> {
+pub fn tinify<T: AsRef<[u8]>>(buf: T, quality: i32) -> Result<Vec<u8>, Error> {
     if (quality < 0) || (quality > 100) {
         return Err(Error::QualityOutOfRange);
     }
 
-    let buf = match std::fs::read(path) {
-        Ok(buf) => buf,
-        Err(e) => return Err(Error::IoError(e)),
-    };
-
-    let format = match imghdr::from_bytes(&buf) {
+    let format = match imghdr::from_bytes(buf.as_ref()) {
         None => return Err(Error::UnexpectedImageType),
         Some(format) => match format {
             Type::Png | Type::Jpeg => format,
@@ -33,8 +27,8 @@ pub fn tinify<P>(path: P, quality: i32) -> Result<Vec<u8>, Error> where P: AsRef
     };
 
     let img = match format {
-        Type::Png => image::load_from_memory_with_format(&buf, image::ImageFormat::Png),
-        Type::Jpeg => image::load_from_memory_with_format(&buf, image::ImageFormat::Jpeg),
+        Type::Png => image::load_from_memory_with_format(buf.as_ref(), image::ImageFormat::Png),
+        Type::Jpeg => image::load_from_memory_with_format(buf.as_ref(), image::ImageFormat::Jpeg),
         _ => unreachable!(),
     };
 
@@ -132,10 +126,11 @@ mod tests {
             .map(|x| {
                 println!("Compressing {}...", x.to_str().unwrap());
 
+                let buf = std::fs::read(x).unwrap();
                 let file_name = x.file_stem().unwrap().to_str().unwrap();
                 let ext = x.extension().unwrap().to_str().unwrap();
 
-                match tinify(x, 70) {
+                match tinify(&buf, 70) {
                     Ok(buf) => {
                         let mut file = std::fs::File::create(format!("./dist/{}_tinify.{}", file_name, ext)).unwrap();
                         file.write_all(&buf).unwrap();
