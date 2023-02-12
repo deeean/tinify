@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 use actix_cors::Cors;
 use actix_web::{App, HttpResponse, HttpServer, Error, middleware};
 use actix_multipart::Multipart;
@@ -36,7 +35,7 @@ async fn parse_multipart(mut payload: Multipart) -> Result<HashMap<String, File>
         let mut buf = Vec::new();
 
         while let Some(chunk) = field.next().await {
-            let data = chunk.unwrap();
+            let data = chunk?;
             buf.extend_from_slice(&data);
         }
 
@@ -49,7 +48,7 @@ async fn parse_multipart(mut payload: Multipart) -> Result<HashMap<String, File>
     Ok(res)
 }
 
-async fn compress(mut payload: Multipart) -> Result<HttpResponse, Error> {
+async fn compress(payload: Multipart) -> Result<HttpResponse, Error> {
     let res = match parse_multipart(payload).await {
         Ok(res) => res,
         Err(_) => return Ok(HttpResponse::InternalServerError().into()),
@@ -81,7 +80,13 @@ async fn compress(mut payload: Multipart) -> Result<HttpResponse, Error> {
     };
 
     match tinify(&image.data, quality) {
-        Ok(res) => Ok(HttpResponse::Ok().content_type(content_type).body(res)),
+        Ok(res) => {
+            if res.len() > image.data.len() {
+                return Ok(HttpResponse::Ok().content_type(content_type).body(image.data.clone()));
+            }
+
+            Ok(HttpResponse::Ok().content_type(content_type).body(res))
+        },
         Err(_) => Ok(HttpResponse::InternalServerError().into()),
     }
 }
@@ -94,11 +99,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
             .wrap(middleware::Logger::default())
-            .wrap(Cors::default()
-                .allow_any_origin()
-                .allow_any_method()
-                .allow_any_header()
-            )
+            .wrap(Cors::permissive())
             .route("/ping", actix_web::web::get().to(ping))
             .route("/compress", actix_web::web::post().to(compress))
     })

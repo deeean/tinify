@@ -1,7 +1,6 @@
 use exoquant::{Color, convert_to_indexed, ditherer, optimizer};
 use image::GenericImageView;
 use imghdr::Type;
-use lodepng::RGBA;
 
 #[derive(Debug)]
 pub enum Error {
@@ -21,18 +20,16 @@ pub fn tinify<T: AsRef<[u8]>>(buf: T, quality: f32) -> Result<Vec<u8>, Error> {
     let format = match imghdr::from_bytes(buf.as_ref()) {
         None => return Err(Error::UnexpectedImageType),
         Some(format) => match format {
-            Type::Png | Type::Jpeg => format,
+            Type::Png | Type::Jpeg => match format {
+                Type::Png => image::ImageFormat::Png,
+                Type::Jpeg => image::ImageFormat::Jpeg,
+                _ => unreachable!(),
+            },
             _ => return Err(Error::UnsupportedImageType(format)),
         },
     };
 
-    let img = match format {
-        Type::Png => image::load_from_memory_with_format(buf.as_ref(), image::ImageFormat::Png),
-        Type::Jpeg => image::load_from_memory_with_format(buf.as_ref(), image::ImageFormat::Jpeg),
-        _ => unreachable!(),
-    };
-
-    let img = match img {
+    let img = match image::load_from_memory_with_format(buf.as_ref(), format) {
         Ok(img) => img,
         Err(e) => return Err(Error::ImageError(e)),
     };
@@ -41,7 +38,7 @@ pub fn tinify<T: AsRef<[u8]>>(buf: T, quality: f32) -> Result<Vec<u8>, Error> {
     let height = img.height() as usize;
 
     match format {
-        Type::Png => {
+        image::ImageFormat::Png => {
             let num_colors = (quality / 100.0 * 256.0).floor() as usize;
 
             let buffer = img
@@ -70,11 +67,9 @@ pub fn tinify<T: AsRef<[u8]>>(buf: T, quality: f32) -> Result<Vec<u8>, Error> {
                 Ok(x) => Ok(x),
                 Err(e) => Err(Error::LodepngError(e)),
             }
-        },
-        Type::Jpeg => {
+        }
+        image::ImageFormat::Jpeg => {
             let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
-
-            println!("{}", quality);
 
             comp.set_size(width, height);
             comp.set_mem_dest();
@@ -88,50 +83,6 @@ pub fn tinify<T: AsRef<[u8]>>(buf: T, quality: f32) -> Result<Vec<u8>, Error> {
                 Err(_) => Err(Error::MozjpegError),
             }
         }
-        _ => return Err(Error::UnsupportedImageType(format)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Write;
-    use super::*;
-
-    #[test]
-    fn test_tinify() {
-        let entries = std::fs::read_dir("./testdata")
-            .unwrap()
-            .map(|x| x.unwrap().path())
-            .filter(|x| {
-                let ext = match x.extension() {
-                    Some(x) => match x.to_str() {
-                        Some(x) => x,
-                        None => return false,
-                    },
-                    None => return false,
-                };
-
-                ext == "png" || ext == "jpg"
-            })
-            .collect::<Vec<_>>();
-
-        entries
-            .iter()
-            .map(|x| {
-                println!("Compressing {}...", x.to_str().unwrap());
-
-                let buf = std::fs::read(x).unwrap();
-                let file_name = x.file_stem().unwrap().to_str().unwrap();
-                let ext = x.extension().unwrap().to_str().unwrap();
-
-                match tinify(&buf, 70.0) {
-                    Ok(buf) => {
-                        let mut file = std::fs::File::create(format!("./dist/{}_tinify.{}", file_name, ext)).unwrap();
-                        file.write_all(&buf).unwrap();
-                    }
-                    Err(e) => panic!("{:?}", e),
-                }
-            })
-            .collect::<Vec<_>>();
+        _ => unreachable!(),
     }
 }
