@@ -3,12 +3,18 @@ use actix_cors::Cors;
 use actix_web::{App, HttpResponse, HttpServer, Error, middleware};
 use actix_multipart::Multipart;
 use futures_util::StreamExt as _;
+use serde::Serialize;
 use tinify::tinify;
 
 #[derive(Debug)]
 struct File {
     data: Vec<u8>,
     content_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Response {
+    error: Option<String>,
 }
 
 async fn ping() -> &'static str {
@@ -51,21 +57,41 @@ async fn parse_multipart(mut payload: Multipart) -> Result<HashMap<String, File>
 async fn compress(payload: Multipart) -> Result<HttpResponse, Error> {
     let res = match parse_multipart(payload).await {
         Ok(res) => res,
-        Err(_) => return Ok(HttpResponse::InternalServerError().into()),
+        Err(_) => return Ok(
+            HttpResponse::InternalServerError()
+                .json(Response {
+                    error: Some("Failed to parse multipart".to_string()),
+                })
+        ),
     };
 
     let image = match res.get("image") {
         Some(image) => image,
-        None => return Ok(HttpResponse::InternalServerError().into()),
+        None => return Ok(
+            HttpResponse::BadRequest()
+                .json(Response {
+                    error: Some("Missing image".to_string()),
+                })
+        ),
     };
 
     let quality = match res.get("quality") {
         Some(quality) => match std::str::from_utf8(&quality.data) {
             Ok(quality) => match quality.parse::<f32>() {
                 Ok(quality) => quality,
-                Err(_) => return Ok(HttpResponse::InternalServerError().into()),
+                Err(_) => return Ok(
+                    HttpResponse::BadRequest()
+                        .json(Response {
+                            error: Some("Failed to parse quality".to_string()),
+                        })
+                ),
             },
-            Err(_) => return Ok(HttpResponse::InternalServerError().into()),
+            Err(_) => return Ok(
+                HttpResponse::BadRequest()
+                    .json(Response {
+                        error: Some("Failed to parse quality".to_string()),
+                    })
+            ),
         },
         None => 70.0,
     };
@@ -74,9 +100,19 @@ async fn compress(payload: Multipart) -> Result<HttpResponse, Error> {
         Some(content_type) => match content_type.as_str() {
             "image/jpeg" => "image/jpeg",
             "image/png" => "image/png",
-            _ => return Ok(HttpResponse::InternalServerError().into()),
+            _ => return Ok(
+                HttpResponse::InternalServerError()
+                    .json(Response {
+                        error: Some("Unsupported content type".to_string()),
+                    })
+            ),
         },
-        None => return Ok(HttpResponse::InternalServerError().into()),
+        None => return Ok(
+            HttpResponse::InternalServerError()
+                .json(Response {
+                    error: Some("Missing content type".to_string()),
+                })
+        ),
     };
 
     match tinify(&image.data, quality) {
@@ -87,7 +123,9 @@ async fn compress(payload: Multipart) -> Result<HttpResponse, Error> {
 
             Ok(HttpResponse::Ok().content_type(content_type).body(res))
         },
-        Err(_) => Ok(HttpResponse::InternalServerError().into()),
+        Err(_) => Ok(HttpResponse::InternalServerError().json(Response {
+            error: Some("Failed to compress image".to_string()),
+        })),
     }
 }
 

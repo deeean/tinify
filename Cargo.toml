@@ -17,4 +17,4 @@ imghdr = "0.7.0"
 lodepng = "3.7.2"
 mime = "0.3.16"
 mozjpeg = "0.9.4"
-serde = "1.0.152"
+serde = { version = "1.0.152", features = ["derive"] }
